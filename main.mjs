@@ -59,7 +59,7 @@ try {
     log('✅ 更新ボタンクリック完了')
 
     log('⏳ 利用継続ボタンをクリック...')
-    await page.$eval('button[formaction="/xapanel/xvps/server/freevps/extend/conf"]', btn => btn.click())
+    await page.locator('text=引き続き無料VPSの利用を継続する').setTimeout(60000).click()
     log('✅ 利用継続ボタンクリック完了')
 
     log('⏳ キャプチャページの読込を待機中...')
