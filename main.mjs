@@ -66,6 +66,10 @@ try {
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
     log('✅ キャプチャページ読込完了')
 
+    log('⏳ キャプチャ画像の出現を待機中...')
+    await page.waitForSelector('img[src^="data:"]', { timeout: 60000 })
+    log('✅ キャプチャ画像確認')
+
     log('⏳ キャプチャ画像を抽出中...')
     const body = await page.$eval('img[src^="data:"]', img => img.src)
     log('✅ キャプチャ画像抽出完了')
