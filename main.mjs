@@ -19,88 +19,73 @@ const userAgent = await browser.userAgent()
 await page.setUserAgent(userAgent.replace('Headless', ''))
 const recorder = await page.screencast({ path: 'recording.webm' })
 
-// デバッグログ用関数
 const log = (step) => console.log(`[${new Date().toISOString()}] ${step}`)
 
 try {
     log('✅ ブラウザ起動完了')
-    
+
     if (process.env.PROXY_SERVER) {
         const { username, password } = new URL(process.env.PROXY_SERVER)
         if (username && password) {
             await page.authenticate({ username, password })
         }
     }
-    
+
     log('⏳ ログインページへアクセス中...')
-    await page.goto('https://secure.xserver.ne.jp/xapanel/login/xvps/', { 
+    await page.goto('https://secure.xserver.ne.jp/xapanel/login/xvps/', {
         waitUntil: 'networkidle2',
-        timeout: 60000  // ← 60秒に延長
+        timeout: 60000
     })
     log('✅ ログインページ読込完了')
-    
+
     log('⏳ ログイン情報を入力中...')
     await page.locator('#memberid').fill(process.env.EMAIL)
     await page.locator('#user_password').fill(process.env.PASSWORD)
-    
+
     log('⏳ ログインボタンをクリック...')
-    await page.locator('text=ログインする').click()
-    
+    await page.locator('text=ログインする').click({ timeout: 60000 })
+
     log('⏳ ログイン後のページ読込を待機中...')
-    await page.waitForNavigation({ 
-        waitUntil: 'networkidle2',
-        timeout: 60000  // ← タイムアウト設定を追加
-    })
-    log('✅ ログイン完了')
-    
-    log('⏳ VPS詳細ページへ移動中...')
-    await page.locator('a[href^="/xapanel/xvps/server/detail?id="]').click()
-    await page.waitForNavigation({ 
-        waitUntil: 'networkidle2',
-        timeout: 60000  // ← タイムアウト設定を追加
-    })
-    log('✅ VPS詳細ページ読込完了')
-    
-    log('⏳ 更新ボタンをクリック...')
-    await page.locator('text=更新する').click()
-    log('✅ 更新ボタンクリック完了')
-    
-    log('⏳ 利用継続ボタンをクリック...')
-    await page.locator('text=無料VPSの利用を継続する').click({ timeout: 60000 })
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
-    log('✅ ✅ ✅ VPS更新完了！！！')
-    
+    log('✅ ログイン完了')
+
+    log('⏳ VPS詳細ページへ移動中...')
+    await page.locator('a[href^="/xapanel/xvps/server/detail?id="]').click({ timeout: 60000 })
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
+    log('✅ VPS詳細ページ読込完了')
+
+    log('⏳ 更新ボタンをクリック...')
+    await page.locator('text=更新する').click({ timeout: 60000 })
+    log('✅ 更新ボタンクリック完了')
+
+    log('⏳ 利用継続ボタンをクリック...')
+    await page.locator('text=引き続き無料VPSの利用を継続する').click({ timeout: 60000 })
+
     log('⏳ キャプチャページの読込を待機中...')
-    await page.waitForNavigation({ 
-        waitUntil: 'networkidle2',
-        timeout: 60000  // ← タイムアウト設定を追加
-    })
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
     log('✅ キャプチャページ読込完了')
-    
+
     log('⏳ キャプチャ画像を抽出中...')
     const body = await page.$eval('img[src^="data:"]', img => img.src)
     log('✅ キャプチャ画像抽出完了')
-    
+
     log('⏳ AIでキャプチャを解析中...')
-    const code = await fetch('https://captcha-120546510085.asia-northeast1.run.app', { 
-        method: 'POST', 
-        body 
+    const code = await fetch('https://captcha-120546510085.asia-northeast1.run.app', {
+        method: 'POST',
+        body
     }).then(r => r.text())
     log(`✅ キャプチャ解析完了: ${code}`)
-    
+
     log('⏳ キャプチャコードを入力中...')
     await page.locator('[placeholder="上の画像の数字を入力"]').fill(code)
-    
+
     log('⏳ 最終確認ボタンをクリック...')
-    await page.locator('text=無料VPSの利用を継続する').click()
-    
+    await page.locator('text=無料VPSの利用を継続する').click({ timeout: 60000 })
+
     log('⏳ 完了ページの読込を待機中...')
-    await page.waitForNavigation({ 
-        waitUntil: 'networkidle2',
-        timeout: 60000  // ← タイムアウト設定を追加
-    })
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
     log('✅ ✅ ✅ VPS更新完了！！！')
-    
+
 } catch (e) {
     console.error('❌ エラーが発生しました:')
     console.error(e.message)
