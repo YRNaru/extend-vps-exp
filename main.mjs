@@ -66,7 +66,9 @@ try {
     log('✅ 更新ボタンクリック完了')
     
     log('⏳ 利用継続ボタンをクリック...')
-    await page.locator('text=引き続き無料VPSの利用を継続する').click()
+    await page.locator('text=無料VPSの利用を継続する').click({ timeout: 60000 })
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
+    log('✅ ✅ ✅ VPS更新完了！！！')
     
     log('⏳ キャプチャページの読込を待機中...')
     await page.waitForNavigation({ 
