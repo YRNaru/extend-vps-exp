@@ -59,7 +59,8 @@ try {
     log('✅ 更新ボタンクリック完了')
 
     log('⏳ 利用継続ボタンをクリック...')
-    await page.locator('text=引き続き無料VPSの利用を継続する').setTimeout(60000).click()
+    await page.$eval('button[formaction="/xapanel/xvps/server/freevps/extend/conf"]', btn => btn.click())
+    log('✅ 利用継続ボタンクリック完了')
 
     log('⏳ キャプチャページの読込を待機中...')
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
@@ -79,12 +80,12 @@ try {
     log('⏳ キャプチャコードを入力中...')
     await page.locator('[placeholder="上の画像の数字を入力"]').setTimeout(60000).fill(code)
 
+    log('⏳ Cloudflare認証の完了を待機中...')
+    await setTimeout(5000)
+    log('✅ 待機完了')
+
     log('⏳ 最終確認ボタンをクリック...')
-    await page.evaluate(() => {
-        const buttons = [...document.querySelectorAll('button, a')]
-        const target = buttons.find(el => el.textContent.trim() === '無料VPSの利用を継続する')
-        target?.click()
-    })
+    await page.$eval('button[formaction="/xapanel/xvps/server/freevps/extend/do"]', btn => btn.click())
     log('✅ 最終確認ボタンクリック完了')
 
     log('⏳ 完了ページの読込を待機中...')
