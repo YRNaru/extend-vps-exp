@@ -79,17 +79,13 @@ try {
     log('⏳ キャプチャコードを入力中...')
     await page.locator('[placeholder="上の画像の数字を入力"]').setTimeout(60000).fill(code)
 
-    // デバッグ：入力後のページを確認
-    await page.screenshot({ path: 'after_captcha.png' })
-    log('📸 キャプチャ入力後のスクリーンショットを保存')
-
-    const buttons = await page.$$eval('button, input[type="submit"], a', els =>
-        els.map(el => el.textContent?.trim()).filter(Boolean)
-    )
-    log(`🔍 ページ上のボタン一覧: ${JSON.stringify(buttons)}`)
-
     log('⏳ 最終確認ボタンをクリック...')
-    await page.locator('text=無料VPSの利用を継続する').setTimeout(60000).click()
+    await page.evaluate(() => {
+        const buttons = [...document.querySelectorAll('button, a')]
+        const target = buttons.find(el => el.textContent.trim() === '無料VPSの利用を継続する')
+        target?.click()
+    })
+    log('✅ 最終確認ボタンクリック完了')
 
     log('⏳ 完了ページの読込を待機中...')
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
