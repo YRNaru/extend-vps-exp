@@ -39,27 +39,27 @@ try {
     log('✅ ログインページ読込完了')
 
     log('⏳ ログイン情報を入力中...')
-    await page.locator('#memberid').fill(process.env.EMAIL)
-    await page.locator('#user_password').fill(process.env.PASSWORD)
+    await page.locator('#memberid').setTimeout(60000).fill(process.env.EMAIL)
+    await page.locator('#user_password').setTimeout(60000).fill(process.env.PASSWORD)
 
     log('⏳ ログインボタンをクリック...')
-    await page.locator('text=ログインする').click({ timeout: 60000 })
+    await page.locator('text=ログインする').setTimeout(60000).click()
 
     log('⏳ ログイン後のページ読込を待機中...')
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
     log('✅ ログイン完了')
 
     log('⏳ VPS詳細ページへ移動中...')
-    await page.locator('a[href^="/xapanel/xvps/server/detail?id="]').click({ timeout: 60000 })
+    await page.locator('a[href^="/xapanel/xvps/server/detail?id="]').setTimeout(60000).click()
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
     log('✅ VPS詳細ページ読込完了')
 
     log('⏳ 更新ボタンをクリック...')
-    await page.locator('text=更新する').click({ timeout: 60000 })
+    await page.locator('text=更新する').setTimeout(60000).click()
     log('✅ 更新ボタンクリック完了')
 
     log('⏳ 利用継続ボタンをクリック...')
-    await page.locator('text=引き続き無料VPSの利用を継続する').click({ timeout: 60000 })
+    await page.locator('text=引き続き無料VPSの利用を継続する').setTimeout(60000).click()
 
     log('⏳ キャプチャページの読込を待機中...')
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
@@ -77,10 +77,10 @@ try {
     log(`✅ キャプチャ解析完了: ${code}`)
 
     log('⏳ キャプチャコードを入力中...')
-    await page.locator('[placeholder="上の画像の数字を入力"]').fill(code)
+    await page.locator('[placeholder="上の画像の数字を入力"]').setTimeout(60000).fill(code)
 
     log('⏳ 最終確認ボタンをクリック...')
-    await page.locator('text=無料VPSの利用を継続する').click({ timeout: 60000 })
+    await page.locator('text=無料VPSの利用を継続する').setTimeout(60000).click()
 
     log('⏳ 完了ページの読込を待機中...')
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
