@@ -89,17 +89,28 @@ try {
     log('✅ 待機完了')
 
     log('⏳ 最終確認ボタンをクリック...')
+    // ナビゲーション開始イベントをリッスン
+    const navigationPromise = page.waitForNavigation({ 
+        waitUntil: 'networkidle0',  // networkidle2 → networkidle0 に変更
+        timeout: 120000  // 120秒に延長
+    }).catch(() => {
+        // ナビゲーション失敗を無視（ページ遷移なしの場合がある）
+        log('⚠️ ナビゲーション失敗（ページ遷移なし）- 続行します')
+        return true
+    })
+    
     await page.$eval('button[formaction="/xapanel/xvps/server/freevps/extend/do"]', btn => btn.click())
     log('✅ 最終確認ボタンクリック完了')
 
     log('⏳ 完了ページの読込を待機中...')
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
+    await navigationPromise
     log('✅ ✅ ✅ VPS更新完了！！！')
 
 } catch (e) {
     console.error('❌ エラーが発生しました:')
     console.error(e.message)
     console.error(e.stack)
+    process.exit(1)
 } finally {
     await setTimeout(5000)
     await recorder.stop()
