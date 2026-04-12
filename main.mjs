@@ -250,7 +250,7 @@ try {
     }
     
     // process.exit() を遅延させて、ファイル保存を完了させる
-    setTimeout(() => {
+    globalThis.setTimeout(() => {
         process.exit(hasError ? 1 : 0)
     }, 1000)
 }
