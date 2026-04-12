@@ -113,7 +113,11 @@ try {
     log('ℹ️  このスクリーンショットで、認識されたコードが正しく入力されているか確認できます')
 
     log('⏳ 最終確認ボタンをクリック...')
-    await page.$eval('button[formaction="/xapanel/xvps/server/freevps/extend/do"]', btn => btn.click())
+    // disabled 属性を削除してからクリック
+    await page.$eval('button[formaction="/xapanel/xvps/server/freevps/extend/do"]', btn => {
+        btn.removeAttribute('disabled')
+        btn.click()
+    })
     log('✅ 最終確認ボタンクリック完了')
 
     // ボタンクリック直後に少し待機
