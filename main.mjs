@@ -4,7 +4,6 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { setTimeout } from 'node:timers/promises'
 import { writeFileSync, mkdirSync } from 'fs'
 
-// Stealthプラグインを適用（Cloudflareのボット検出を回避）
 const puppeteer = addExtra(puppeteerCore)
 puppeteer.use(StealthPlugin())
 
@@ -32,49 +31,59 @@ let hasError = false
 let errorMessage = ''
 let vpsDetailUrl = ''
 
-// Cloudflare Turnstileウィジェットをクリックする関数
-async function clickCloudflareTurnstile() {
-    await setTimeout(3000)
-
+// Cloudflare Turnstileをクリックし、トークンが現れるまでポーリングする
+async function waitForCloudflareTurnstile() {
+    // ── Step1: Cloudflare iframeをクリック ──
+    await setTimeout(2000)
     const frames = page.frames()
     log(`🔍 フレーム数: ${frames.length}`)
 
     for (const frame of frames) {
-        const frameUrl = frame.url()
-        if (frameUrl.includes('challenges.cloudflare.com')) {
-            log(`🔍 Cloudflareフレーム発見: ${frameUrl.substring(0, 80)}...`)
-
+        if (frame.url().includes('challenges.cloudflare.com')) {
+            log(`🔍 Cloudflareフレーム発見: ${frame.url().substring(0, 80)}...`)
             try {
                 const frameElement = await frame.frameElement()
-                if (frameElement) {
-                    const box = await frameElement.boundingBox()
-                    if (box) {
-                        log(`📍 iframe座標: x=${box.x.toFixed(0)}, y=${box.y.toFixed(0)}, w=${box.width.toFixed(0)}, h=${box.height.toFixed(0)}`)
-                        await page.mouse.click(box.x + 25, box.y + box.height / 2)
-                        log('✅ Cloudflare Turnstile: 座標クリック成功')
-                        return true
-                    }
+                const box = await frameElement.boundingBox()
+                if (box) {
+                    log(`📍 iframe座標: x=${box.x.toFixed(0)}, y=${box.y.toFixed(0)}, w=${box.width.toFixed(0)}, h=${box.height.toFixed(0)}`)
+                    // チェックボックス位置をクリック（左端から25px、縦中央）
+                    await page.mouse.click(box.x + 25, box.y + box.height / 2)
+                    log('✅ Cloudflare Turnstile: クリック実行')
                 }
             } catch (e) {
-                log(`⚠️ 座標クリック失敗: ${e.message}`)
+                log(`⚠️ クリック失敗: ${e.message}`)
             }
-
-            const selectors = ['div[role="checkbox"]', 'label', '.ctp-checkbox', 'input', 'body']
-            for (const sel of selectors) {
-                try {
-                    await frame.waitForSelector(sel, { timeout: 2000 })
-                    await frame.click(sel)
-                    log(`✅ セレクタ "${sel}" でクリック成功`)
-                    return true
-                } catch { /* 次を試す */ }
-            }
-
-            log('⚠️ フレーム内クリック失敗')
-            return false
+            break
         }
     }
 
-    log('⚠️ Cloudflareフレームが見つかりませんでした')
+    // ── Step2: cf-turnstile-response トークンが現れるまでポーリング ──
+    log('⏳ cf-turnstile-response トークンを待機中（最大60秒）...')
+    for (let i = 0; i < 30; i++) {
+        await setTimeout(2000)
+        try {
+            const token = await page.evaluate(() => {
+                const el = document.querySelector('[name="cf-turnstile-response"]')
+                return el ? el.value : ''
+            })
+            if (token && token.length > 10) {
+                log(`✅ Cloudflareトークン取得成功！（${(i + 1) * 2}秒後, 長さ=${token.length}）`)
+                return true
+            }
+        } catch {}
+    }
+
+    // タイムアウト時の診断情報
+    log('⚠️ タイムアウト: Cloudflareトークンが取得できませんでした')
+    try {
+        const tokenVal = await page.evaluate(() => {
+            const el = document.querySelector('[name="cf-turnstile-response"]')
+            return el ? `value="${el.value}" (長さ=${el.value.length})` : '要素が見つかりません'
+        })
+        log(`🔍 cf-turnstile-response の状態: ${tokenVal}`)
+    } catch (e) {
+        log(`🔍 cf-turnstile-response チェック失敗: ${e.message}`)
+    }
     return false
 }
 
@@ -95,14 +104,10 @@ try {
     })
     log('✅ ログインページ読込完了')
 
-    log('⏳ ログイン情報を入力中...')
     await page.locator('#memberid').setTimeout(60000).fill(process.env.EMAIL)
     await page.locator('#user_password').setTimeout(60000).fill(process.env.PASSWORD)
-
     log('⏳ ログインボタンをクリック...')
     await page.locator('text=ログインする').setTimeout(60000).click()
-
-    log('⏳ ログイン後のページ読込を待機中...')
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
     log('✅ ログイン完了')
 
@@ -120,26 +125,22 @@ try {
         retryCount++
         log(`\n🔄 キャプチャ認証 試行 ${retryCount}/${maxRetries}`)
 
-        log('⏳ 更新ボタンをクリック...')
         await page.locator('text=更新する').setTimeout(60000).click()
         log('✅ 更新ボタンクリック完了')
-
-        log('⏳ 利用継続ボタンをクリック...')
         await page.locator('text=引き続き無料VPSの利用を継続する').setTimeout(60000).click()
         log('✅ 利用継続ボタンクリック完了')
 
-        log('⏳ キャプチャページの読込を待機中...')
         await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
         log('✅ キャプチャページ読込完了')
 
-        log('⏳ キャプチャ画像の出現を待機中...')
         await page.waitForSelector('img[src^="data:"]', { timeout: 60000 })
         log('✅ キャプチャ画像確認')
 
-        log('⏳ キャプチャ画像を抽出中...')
         const body = await page.$eval('img[src^="data:"]', img => img.src)
-        const base64Data = body.replace(/^data:image\/[^;]+;base64,/, '')
-        writeFileSync(`screenshots/02_captcha_image_retry${retryCount}.png`, Buffer.from(base64Data, 'base64'))
+        writeFileSync(
+            `screenshots/02_captcha_image_retry${retryCount}.png`,
+            Buffer.from(body.replace(/^data:image\/[^;]+;base64,/, ''), 'base64')
+        )
         log('✅ キャプチャ画像抽出完了')
 
         log('⏳ AIでキャプチャを解析中...')
@@ -149,19 +150,17 @@ try {
         }).then(r => r.text())
         log(`✅ キャプチャ解析完了: ${code}`)
 
-        log('⏳ キャプチャコードを入力中...')
         await page.locator('[placeholder="上の画像の数字を入力"]').setTimeout(60000).fill(code)
         log(`✅ コード「${code}」を入力完了`)
 
-        log('⏳ Cloudflare Turnstileをクリック中...')
-        const clicked = await clickCloudflareTurnstile()
-        log(clicked ? '✅ Cloudflare Turnstileクリック完了' : '⚠️ Cloudflare Turnstileクリック未完了')
+        // Cloudflare Turnstile クリック＆トークン待機
+        log('⏳ Cloudflare Turnstile処理中...')
+        const cfPassed = await waitForCloudflareTurnstile()
+        log(cfPassed
+            ? '✅ Cloudflare認証成功！フォームを送信します'
+            : '⚠️ Cloudflare認証未完了のままフォーム送信を試みます（診断のため）'
+        )
 
-        log('⏳ Cloudflare認証の完了を待機中...')
-        await setTimeout(60000)
-        log('✅ 待機完了')
-
-        log('📸 Cloudflare検証完了後の画面をスクリーンショット中...')
         await page.screenshot({ path: `screenshots/03_after_cloudflare_wait_retry${retryCount}.png` })
         log(`✅ screenshots/03_after_cloudflare_wait_retry${retryCount}.png に保存完了`)
 
@@ -174,13 +173,13 @@ try {
 
         await setTimeout(3000)
 
-        log('🔍 認証結果を確認中...')
-        const errorMessageExists = await page.$eval('body', b => b.innerText.includes('認証に失敗しました')).catch(() => false)
+        const errorMessageExists = await page.$eval('body', b =>
+            b.innerText.includes('認証に失敗しました')
+        ).catch(() => false)
 
         if (errorMessageExists) {
             log(`⚠️ 認証に失敗しました（試行 ${retryCount}/${maxRetries}）`)
             if (retryCount < maxRetries) {
-                log('🔄 VPS詳細ページに戻ってリトライします...')
                 await page.goto(vpsDetailUrl, { waitUntil: 'networkidle2', timeout: 60000 })
                 log('✅ VPS詳細ページに戻りました')
             }
@@ -194,27 +193,21 @@ try {
         throw new Error(`${maxRetries}回の試行後も認証に失敗しました`)
     }
 
-    log('⏳ 最終的なページ遷移を待機中...')
     await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 60000 }).catch(() => {
         log('⚠️ ナビゲーション失敗（ページ遷移なし）- 続行します')
         return true
     })
 
-    log('📸 最終確認ページを撮影中...')
     await page.screenshot({ path: 'screenshots/07_final_page.png' })
     log('✅ screenshots/07_final_page.png に保存完了')
-
     log('✅ ✅ ✅ VPS更新処理完了！！！')
 
 } catch (e) {
     hasError = true
     errorMessage = e.message
-    console.error('❌ エラーが発生しました:')
-    console.error(e.message)
+    console.error('❌ エラーが発生しました:', e.message)
     console.error(e.stack)
-
     try {
-        log('📸 エラー発生時の画面を撮影中...')
         await page.screenshot({ path: 'screenshots/ERROR_page.png' })
         log('✅ screenshots/ERROR_page.png に保存完了')
     } catch { log('⚠️ エラー画面のスクリーンショット撮影に失敗') }
@@ -225,14 +218,9 @@ try {
         await recorder.stop()
         await browser.close()
         log('🛑 ブラウザを終了しました')
-        if (hasError) {
-            log(`⚠️ エラーメッセージ: ${errorMessage}`)
-        } else {
-            log('✅ 処理成功！')
-        }
-    } catch (finallyError) {
-        console.error('⚠️ finally ブロック内でエラー:', finallyError)
+        log(hasError ? `⚠️ エラー: ${errorMessage}` : '✅ 処理成功！')
+    } catch (e) {
+        console.error('⚠️ finally エラー:', e)
     }
-
-    globalThis.setTimeout(() => { process.exit(hasError ? 1 : 0) }, 1000)
+    globalThis.setTimeout(() => process.exit(hasError ? 1 : 0), 1000)
 }
