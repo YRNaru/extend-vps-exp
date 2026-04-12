@@ -26,6 +26,9 @@ const log = (step) => console.log(`[${new Date().toISOString()}] ${step}`)
 // スクリーンショット保存ディレクトリ作成
 mkdirSync('screenshots', { recursive: true })
 
+let hasError = false
+let errorMessage = ''
+
 try {
     log('✅ ブラウザ起動完了')
 
@@ -75,15 +78,13 @@ try {
     await page.waitForSelector('img[src^="data:"]', { timeout: 60000 })
     log('✅ キャプチャ画像確認')
 
-    // 📸 スクリーンショット1: キャプチャ画像が表示されている状態
     log('📸 [スクリーンショット1] キャプチャ画像表示ページを撮影中...')
-    const screenshot1 = await page.screenshot({ path: 'screenshots/01_captcha_display.png' })
+    await page.screenshot({ path: 'screenshots/01_captcha_display.png' })
     log('✅ screenshots/01_captcha_display.png に保存完了')
 
     log('⏳ キャプチャ画像を抽出中...')
     const body = await page.$eval('img[src^="data:"]', img => img.src)
     
-    // キャプチャ画像をBase64から画像ファイルに変換して保存
     const base64Data = body.replace(/^data:image\/[^;]+;base64,/, '')
     const captchaImageBuffer = Buffer.from(base64Data, 'base64')
     writeFileSync('screenshots/02_captcha_image_extracted.png', captchaImageBuffer)
@@ -106,9 +107,8 @@ try {
     await setTimeout(5000)
     log('✅ 待機完了')
 
-    // 📸 スクリーンショット2: キャプチャコード入力後（最終確認ボタン前）
     log('📸 [スクリーンショット2] キャプチャコード入力後のページを撮影中...')
-    const screenshot2 = await page.screenshot({ path: 'screenshots/03_before_final_button.png' })
+    await page.screenshot({ path: 'screenshots/03_before_final_button.png' })
     log('✅ screenshots/03_before_final_button.png に保存完了')
     log('ℹ️  このスクリーンショットで、認識されたコードが正しく入力されているか確認できます')
 
@@ -116,18 +116,74 @@ try {
     await page.$eval('button[formaction="/xapanel/xvps/server/freevps/extend/do"]', btn => btn.click())
     log('✅ 最終確認ボタンクリック完了')
 
-    log('⏳ 完了ダイアログの出現を待機中...')
-    await page.waitForSelector('button#modalDo__close', { timeout: 30000 })
-    log('✅ 完了ダイアログ確認')
+    // ボタンクリック直後に少し待機
+    await setTimeout(2000)
 
-    // 📸 スクリーンショット3: 完了ダイアログ
-    log('📸 [スクリーンショット3] 完了ダイアログを撮影中...')
-    const screenshot3 = await page.screenshot({ path: 'screenshots/04_completion_dialog.png' })
-    log('✅ screenshots/04_completion_dialog.png に保存完了')
+    log('📸 [スクリーンショット3] ボタンクリック後のページを撮影中...')
+    await page.screenshot({ path: 'screenshots/04_after_button_click.png' })
+    log('✅ screenshots/04_after_button_click.png に保存完了')
+    log('⭐ このスクリーンショットを確認して、ボタンの構造をお教えください！')
 
-    log('⏳ ダイアログの「OK」ボタンをクリック...')
-    await page.$eval('button#modalDo__close', btn => btn.click())
-    log('✅ OKボタンクリック完了')
+    // ページのHTMLを取得して保存（デバッグ用）
+    const html = await page.content()
+    writeFileSync('screenshots/05_page_html.txt', html, 'utf-8')
+    log('✅ screenshots/05_page_html.txt に保存完了 (ページ全体のHTML)')
+
+    // ボタンを探す
+    log('🔍 ページ内のボタンを検索中...')
+    const buttons = await page.evaluate(() => {
+        const allButtons = Array.from(document.querySelectorAll('button'))
+        return allButtons.map(btn => ({
+            id: btn.id,
+            class: btn.className,
+            text: btn.innerText.trim(),
+            type: btn.type,
+            html: btn.outerHTML.substring(0, 200)
+        }))
+    })
+    
+    writeFileSync('screenshots/06_buttons_found.json', JSON.stringify(buttons, null, 2), 'utf-8')
+    log('✅ screenshots/06_buttons_found.json に保存完了')
+    log('📋 ページ内のボタン一覧:')
+    buttons.forEach((btn, idx) => {
+        log(`   [${idx}] ID: "${btn.id}" | Class: "${btn.class}" | Text: "${btn.text}"`)
+    })
+
+    // modalDo__close ボタンを探す（タイムアウトなし）
+    log('⏳ OKボタンを検索中...')
+    const okButtonExists = await page.$('button#modalDo__close')
+    if (okButtonExists) {
+        log('✅ button#modalDo__close が見つかりました！')
+        await page.$eval('button#modalDo__close', btn => btn.click())
+        log('✅ OKボタンクリック完了')
+    } else {
+        log('⚠️ button#modalDo__close が見つかりません')
+        log('🔍 他のボタンセレクターを試します...')
+        
+        // 代替案1: IDで検索
+        const idMatch = buttons.find(btn => btn.id && (btn.id.includes('ok') || btn.id.includes('close') || btn.id.includes('modal')))
+        if (idMatch) {
+            log(`   見つかった: ID="${idMatch.id}"`)
+            await page.$eval(`button#${idMatch.id}`, btn => btn.click())
+            log('✅ 代替ボタンをクリック完了')
+        } else {
+            log('   ID検索でも見つかりません')
+            
+            // 代替案2: テキストで検索
+            const textMatch = buttons.find(btn => btn.text === 'OK')
+            if (textMatch) {
+                log(`   見つかった: Text="${textMatch.text}"`)
+                await page.evaluate(() => {
+                    const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText === 'OK')
+                    if (btn) btn.click()
+                })
+                log('✅ OK テキストボタンをクリック完了')
+            } else {
+                log('⚠️ OKボタンが見つかないため、スキップします')
+                log('💡 スクリーンショット 04_after_button_click.png を確認して、ボタンの構造を確認してください')
+            }
+        }
+    }
 
     log('⏳ 最終的なページ遷移を待機中...')
     await page.waitForNavigation({ 
@@ -138,27 +194,63 @@ try {
         return true
     })
     
-    // 📸 スクリーンショット4: 最終確認ページ
     log('📸 [スクリーンショット4] 最終確認ページを撮影中...')
-    const screenshot4 = await page.screenshot({ path: 'screenshots/05_final_page.png' })
-    log('✅ screenshots/05_final_page.png に保存完了')
+    await page.screenshot({ path: 'screenshots/07_final_page.png' })
+    log('✅ screenshots/07_final_page.png に保存完了')
 
-    log('✅ ✅ ✅ VPS更新完了！！！')
-    log('📁 スクリーンショットは screenshots/ ディレクトリに保存されました')
-    log('   01_captcha_display.png - キャプチャ画像表示ページ')
-    log('   02_captcha_image_extracted.png - AIが認識したキャプチャ画像')
-    log('   03_before_final_button.png - キャプチャコード入力後')
-    log('   04_completion_dialog.png - 完了ダイアログ')
-    log('   05_final_page.png - 最終確認ページ')
+    log('✅ ✅ ✅ VPS更新処理完了！！！')
 
 } catch (e) {
+    hasError = true
+    errorMessage = e.message
     console.error('❌ エラーが発生しました:')
     console.error(e.message)
     console.error(e.stack)
-    process.exit(1)
+    
+    // エラー時もスクリーンショット撮る
+    try {
+        log('📸 エラー発生時の画面を撮影中...')
+        await page.screenshot({ path: 'screenshots/ERROR_page.png' })
+        log('✅ screenshots/ERROR_page.png に保存完了')
+    } catch (screenshotError) {
+        log('⚠️ エラー画面のスクリーンショット撮影に失敗')
+    }
+
 } finally {
-    await setTimeout(5000)
-    await recorder.stop()
-    await browser.close()
-    log('🛑 ブラウザを終了しました')
+    try {
+        await setTimeout(2000)
+        await recorder.stop()
+        await browser.close()
+        log('🛑 ブラウザを終了しました')
+        
+        log('📁 スクリーンショットとデバッグ情報は screenshots/ ディレクトリに保存されました')
+        
+        if (hasError) {
+            log('')
+            log('⚠️ エラーが発生しましたが、以下のファイルで詳細を確認できます:')
+            log('   📸 screenshots/04_after_button_click.png ← ボタン後の画面')
+            log('   📋 screenshots/06_buttons_found.json ← ボタン一覧')
+            log('   📄 screenshots/05_page_html.txt ← ページのHTML')
+            log('')
+            log(`   エラーメッセージ: ${errorMessage}`)
+            log('')
+        } else {
+            log('✅ 処理成功！以下のファイルが生成されました:')
+            log('   01_captcha_display.png')
+            log('   02_captcha_image_extracted.png')
+            log('   03_before_final_button.png')
+            log('   04_after_button_click.png')
+            log('   05_page_html.txt')
+            log('   06_buttons_found.json')
+            log('   07_final_page.png')
+        }
+        
+    } catch (finallyError) {
+        console.error('⚠️ finally ブロック内でエラー:', finallyError)
+    }
+    
+    // process.exit() を遅延させて、ファイル保存を完了させる
+    setTimeout(() => {
+        process.exit(hasError ? 1 : 0)
+    }, 1000)
 }
