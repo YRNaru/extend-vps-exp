@@ -106,6 +106,59 @@ try {
         await page.locator('[placeholder="上の画像の数字を入力"]').setTimeout(60000).fill(code)
         log(`✅ コード「${code}」を入力完了`)
 
+        // ====== ここが修正箇所 ======
+        // Cloudflare iframeのチェックボックスをクリック
+        log('⏳ Cloudflareチェックボックスを探しています...')
+        let cfClicked = false
+        try {
+            // iframeが読み込まれるまで少し待つ
+            await setTimeout(2000)
+
+            // iframe要素を取得
+            const iframeHandle = await page.waitForSelector(
+                'iframe[src*="cloudflare"], iframe[src*="challenges"]',
+                { timeout: 15000 }
+            )
+
+            if (iframeHandle) {
+                const cfFrame = await iframeHandle.contentFrame()
+                if (cfFrame) {
+                    await cfFrame.waitForSelector('input[type="checkbox"]', { timeout: 10000 })
+                    await cfFrame.click('input[type="checkbox"]')
+                    log('✅ Cloudflareチェックボックスをクリックしました')
+                    cfClicked = true
+                }
+            }
+        } catch (cfErr) {
+            log(`⚠️ iframeセレクタでの取得に失敗。フレーム一覧から探します: ${cfErr.message}`)
+        }
+
+        // iframeセレクタで失敗した場合、page.frames()から探す
+        if (!cfClicked) {
+            try {
+                const frames = page.frames()
+                log(`🔍 フレーム数: ${frames.length}`)
+                for (const frame of frames) {
+                    const url = frame.url()
+                    log(`   フレームURL: ${url}`)
+                    if (url.includes('cloudflare') || url.includes('challenges')) {
+                        await frame.waitForSelector('input[type="checkbox"]', { timeout: 5000 })
+                        await frame.click('input[type="checkbox"]')
+                        log('✅ Cloudflareチェックボックスをクリックしました（フレーム一覧から）')
+                        cfClicked = true
+                        break
+                    }
+                }
+            } catch (cfErr2) {
+                log(`⚠️ Cloudflareチェックボックスのクリックに失敗しました: ${cfErr2.message}`)
+            }
+        }
+
+        if (!cfClicked) {
+            log('⚠️ Cloudflareチェックボックスが見つかりませんでした。このまま続行します...')
+        }
+        // ====== 修正箇所ここまで ======
+
         log('⏳ Cloudflare認証の完了を待機中...')
         await setTimeout(60000)  // 60秒待機
         log('✅ 待機完了')
