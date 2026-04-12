@@ -1,7 +1,6 @@
 import puppeteer from 'puppeteer'
 import { setTimeout } from 'node:timers/promises'
 import { writeFileSync, mkdirSync } from 'fs'
-import { join } from 'path'
 
 const args = ['--no-sandbox', '--disable-setuid-sandbox']
 if (process.env.PROXY_SERVER) {
@@ -23,11 +22,11 @@ const recorder = await page.screencast({ path: 'recording.webm' })
 
 const log = (step) => console.log(`[${new Date().toISOString()}] ${step}`)
 
-// スクリーンショット保存ディレクトリ作成
 mkdirSync('screenshots', { recursive: true })
 
 let hasError = false
 let errorMessage = ''
+let vpsDetailUrl = '' // VPS詳細ページのURLを保存
 
 try {
     log('✅ ブラウザ起動完了')
@@ -60,19 +59,8 @@ try {
     log('⏳ VPS詳細ページへ移動中...')
     await page.locator('a[href^="/xapanel/xvps/server/detail?id="]').setTimeout(60000).click()
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
-    log('✅ VPS詳細ページ読込完了')
-
-    log('⏳ 更新ボタンをクリック...')
-    await page.locator('text=更新する').setTimeout(60000).click()
-    log('✅ 更新ボタンクリック完了')
-
-    log('⏳ 利用継続ボタンをクリック...')
-    await page.locator('text=引き続き無料VPSの利用を継続する').setTimeout(60000).click()
-    log('✅ 利用継続ボタンクリック完了')
-
-    log('⏳ キャプチャページの読込を待機中...')
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
-    log('✅ キャプチャページ読込完了')
+    vpsDetailUrl = page.url()  // VPS詳細ページのURLを保存
+    log(`✅ VPS詳細ページ読込完了: ${vpsDetailUrl}`)
 
     // リトライループ
     let retryCount = 0
@@ -82,6 +70,18 @@ try {
     while (retryCount < maxRetries && !captchaSucceeded) {
         retryCount++
         log(`\n🔄 キャプチャ認証 試行 ${retryCount}/${maxRetries}`)
+
+        log('⏳ 更新ボタンをクリック...')
+        await page.locator('text=更新する').setTimeout(60000).click()
+        log('✅ 更新ボタンクリック完了')
+
+        log('⏳ 利用継続ボタンをクリック...')
+        await page.locator('text=引き続き無料VPSの利用を継続する').setTimeout(60000).click()
+        log('✅ 利用継続ボタンクリック完了')
+
+        log('⏳ キャプチャページの読込を待機中...')
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
+        log('✅ キャプチャページ読込完了')
 
         log('⏳ キャプチャ画像の出現を待機中...')
         await page.waitForSelector('img[src^="data:"]', { timeout: 60000 })
@@ -111,17 +111,14 @@ try {
         log('✅ 待機完了')
 
         log('⏳ 最終確認ボタンをクリック...')
-        // disabled 属性を削除してからクリック
         await page.$eval('button[formaction="/xapanel/xvps/server/freevps/extend/do"]', btn => {
             btn.removeAttribute('disabled')
             btn.click()
         })
         log('✅ 最終確認ボタンクリック完了')
 
-        // ボタンクリック直後に少し待機
         await setTimeout(3000)
 
-        // 認証失敗メッセージを確認
         log('🔍 認証結果を確認中...')
         const errorMessageExists = await page.$eval('body', body => {
             const text = body.innerText
@@ -131,19 +128,9 @@ try {
         if (errorMessageExists) {
             log(`⚠️ 認証に失敗しました（試行 ${retryCount}/${maxRetries}）`)
             if (retryCount < maxRetries) {
-                log('🔄 ブラウザの戻るボタンで前のページに戻ります...')
-                try {
-                    await page.goBack({ waitUntil: 'networkidle2', timeout: 60000 })
-                    log('✅ 前のページに戻りました')
-                    // ページが戻ったので、キャプチャ画像を再度待機
-                    await page.waitForSelector('img[src^="data:"]', { timeout: 30000 })
-                    log('✅ キャプチャ画像が再度表示されました')
-                } catch (backError) {
-                    log(`⚠️ 戻るボタンでのエラー: ${backError.message}`)
-                    log('🔄 ページをリロードして再試行します...')
-                    await page.reload({ waitUntil: 'networkidle2', timeout: 60000 })
-                    log('✅ ページリロード完了')
-                }
+                log('🔄 VPS詳細ページに戻ってリトライします...')
+                await page.goto(vpsDetailUrl, { waitUntil: 'networkidle2', timeout: 60000 })
+                log('✅ VPS詳細ページに戻りました')
             }
         } else {
             log('✅ 認証に成功しました！')
@@ -177,7 +164,6 @@ try {
     console.error(e.message)
     console.error(e.stack)
     
-    // エラー時もスクリーンショット撮る
     try {
         log('📸 エラー発生時の画面を撮影中...')
         await page.screenshot({ path: 'screenshots/ERROR_page.png' })
@@ -192,7 +178,6 @@ try {
         await recorder.stop()
         await browser.close()
         log('🛑 ブラウザを終了しました')
-        
         log('📁 スクリーンショットとデバッグ情報は screenshots/ ディレクトリに保存されました')
         
         if (hasError) {
@@ -203,12 +188,10 @@ try {
         } else {
             log('✅ 処理成功！')
         }
-        
     } catch (finallyError) {
         console.error('⚠️ finally ブロック内でエラー:', finallyError)
     }
     
-    // process.exit() を遅延させて、ファイル保存を完了させる
     globalThis.setTimeout(() => {
         process.exit(hasError ? 1 : 0)
     }, 1000)
