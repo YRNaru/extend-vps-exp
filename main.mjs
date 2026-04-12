@@ -131,9 +131,19 @@ try {
         if (errorMessageExists) {
             log(`⚠️ 認証に失敗しました（試行 ${retryCount}/${maxRetries}）`)
             if (retryCount < maxRetries) {
-                log('🔄 ページをリロードして再試行します...')
-                await page.reload({ waitUntil: 'networkidle2', timeout: 60000 })
-                log('✅ ページリロード完了')
+                log('🔄 ブラウザの戻るボタンで前のページに戻ります...')
+                try {
+                    await page.goBack({ waitUntil: 'networkidle2', timeout: 60000 })
+                    log('✅ 前のページに戻りました')
+                    // ページが戻ったので、キャプチャ画像を再度待機
+                    await page.waitForSelector('img[src^="data:"]', { timeout: 30000 })
+                    log('✅ キャプチャ画像が再度表示されました')
+                } catch (backError) {
+                    log(`⚠️ 戻るボタンでのエラー: ${backError.message}`)
+                    log('🔄 ページをリロードして再試行します...')
+                    await page.reload({ waitUntil: 'networkidle2', timeout: 60000 })
+                    log('✅ ページリロード完了')
+                }
             }
         } else {
             log('✅ 認証に成功しました！')
