@@ -74,119 +74,75 @@ try {
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
     log('✅ キャプチャページ読込完了')
 
-    log('⏳ キャプチャ画像の出現を待機中...')
-    await page.waitForSelector('img[src^="data:"]', { timeout: 60000 })
-    log('✅ キャプチャ画像確認')
+    // リトライループ
+    let retryCount = 0
+    const maxRetries = 3
+    let captchaSucceeded = false
 
-    log('📸 [スクリーンショット1] キャプチャ画像表示ページを撮影中...')
-    await page.screenshot({ path: 'screenshots/01_captcha_display.png' })
-    log('✅ screenshots/01_captcha_display.png に保存完了')
+    while (retryCount < maxRetries && !captchaSucceeded) {
+        retryCount++
+        log(`\n🔄 キャプチャ認証 試行 ${retryCount}/${maxRetries}`)
 
-    log('⏳ キャプチャ画像を抽出中...')
-    const body = await page.$eval('img[src^="data:"]', img => img.src)
-    
-    const base64Data = body.replace(/^data:image\/[^;]+;base64,/, '')
-    const captchaImageBuffer = Buffer.from(base64Data, 'base64')
-    writeFileSync('screenshots/02_captcha_image_extracted.png', captchaImageBuffer)
-    log('✅ screenshots/02_captcha_image_extracted.png に保存完了 (抽出したキャプチャ画像)')
+        log('⏳ キャプチャ画像の出現を待機中...')
+        await page.waitForSelector('img[src^="data:"]', { timeout: 60000 })
+        log('✅ キャプチャ画像確認')
 
-    log('✅ キャプチャ画像抽出完了')
-
-    log('⏳ AIでキャプチャを解析中...')
-    const code = await fetch('https://captcha-120546510085.asia-northeast1.run.app', {
-        method: 'POST',
-        body
-    }).then(r => r.text())
-    log(`✅ キャプチャ解析完了: ${code}`)
-
-    log('⏳ キャプチャコードを入力中...')
-    await page.locator('[placeholder="上の画像の数字を入力"]').setTimeout(60000).fill(code)
-    log(`✅ コード「${code}」を入力完了`)
-
-    log('⏳ Cloudflare認証の完了を待機中...')
-    await setTimeout(5000)
-    log('✅ 待機完了')
-
-    log('📸 [スクリーンショット2] キャプチャコード入力後のページを撮影中...')
-    await page.screenshot({ path: 'screenshots/03_before_final_button.png' })
-    log('✅ screenshots/03_before_final_button.png に保存完了')
-    log('ℹ️  このスクリーンショットで、認識されたコードが正しく入力されているか確認できます')
-
-    log('⏳ 最終確認ボタンをクリック...')
-    // disabled 属性を削除してからクリック
-    await page.$eval('button[formaction="/xapanel/xvps/server/freevps/extend/do"]', btn => {
-        btn.removeAttribute('disabled')
-        btn.click()
-    })
-    log('✅ 最終確認ボタンクリック完了')
-
-    // ボタンクリック直後に少し待機
-    await setTimeout(2000)
-
-    log('📸 [スクリーンショット3] ボタンクリック後のページを撮影中...')
-    await page.screenshot({ path: 'screenshots/04_after_button_click.png' })
-    log('✅ screenshots/04_after_button_click.png に保存完了')
-    log('⭐ このスクリーンショットを確認して、ボタンの構造をお教えください！')
-
-    // ページのHTMLを取得して保存（デバッグ用）
-    const html = await page.content()
-    writeFileSync('screenshots/05_page_html.txt', html, 'utf-8')
-    log('✅ screenshots/05_page_html.txt に保存完了 (ページ全体のHTML)')
-
-    // ボタンを探す
-    log('🔍 ページ内のボタンを検索中...')
-    const buttons = await page.evaluate(() => {
-        const allButtons = Array.from(document.querySelectorAll('button'))
-        return allButtons.map(btn => ({
-            id: btn.id,
-            class: btn.className,
-            text: btn.innerText.trim(),
-            type: btn.type,
-            html: btn.outerHTML.substring(0, 200)
-        }))
-    })
-    
-    writeFileSync('screenshots/06_buttons_found.json', JSON.stringify(buttons, null, 2), 'utf-8')
-    log('✅ screenshots/06_buttons_found.json に保存完了')
-    log('📋 ページ内のボタン一覧:')
-    buttons.forEach((btn, idx) => {
-        log(`   [${idx}] ID: "${btn.id}" | Class: "${btn.class}" | Text: "${btn.text}"`)
-    })
-
-    // modalDo__close ボタンを探す（タイムアウトなし）
-    log('⏳ OKボタンを検索中...')
-    const okButtonExists = await page.$('button#modalDo__close')
-    if (okButtonExists) {
-        log('✅ button#modalDo__close が見つかりました！')
-        await page.$eval('button#modalDo__close', btn => btn.click())
-        log('✅ OKボタンクリック完了')
-    } else {
-        log('⚠️ button#modalDo__close が見つかりません')
-        log('🔍 他のボタンセレクターを試します...')
+        log('⏳ キャプチャ画像を抽出中...')
+        const body = await page.$eval('img[src^="data:"]', img => img.src)
         
-        // 代替案1: IDで検索
-        const idMatch = buttons.find(btn => btn.id && (btn.id.includes('ok') || btn.id.includes('close') || btn.id.includes('modal')))
-        if (idMatch) {
-            log(`   見つかった: ID="${idMatch.id}"`)
-            await page.$eval(`button#${idMatch.id}`, btn => btn.click())
-            log('✅ 代替ボタンをクリック完了')
-        } else {
-            log('   ID検索でも見つかりません')
-            
-            // 代替案2: テキストで検索
-            const textMatch = buttons.find(btn => btn.text === 'OK')
-            if (textMatch) {
-                log(`   見つかった: Text="${textMatch.text}"`)
-                await page.evaluate(() => {
-                    const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText === 'OK')
-                    if (btn) btn.click()
-                })
-                log('✅ OK テキストボタンをクリック完了')
-            } else {
-                log('⚠️ OKボタンが見つかないため、スキップします')
-                log('💡 スクリーンショット 04_after_button_click.png を確認して、ボタンの構造を確認してください')
+        const base64Data = body.replace(/^data:image\/[^;]+;base64,/, '')
+        const captchaImageBuffer = Buffer.from(base64Data, 'base64')
+        writeFileSync(`screenshots/02_captcha_image_retry${retryCount}.png`, captchaImageBuffer)
+        log('✅ キャプチャ画像抽出完了')
+
+        log('⏳ AIでキャプチャを解析中...')
+        const code = await fetch('https://captcha-120546510085.asia-northeast1.run.app', {
+            method: 'POST',
+            body
+        }).then(r => r.text())
+        log(`✅ キャプチャ解析完了: ${code}`)
+
+        log('⏳ キャプチャコードを入力中...')
+        await page.locator('[placeholder="上の画像の数字を入力"]').setTimeout(60000).fill(code)
+        log(`✅ コード「${code}」を入力完了`)
+
+        log('⏳ Cloudflare認証の完了を待機中...')
+        await setTimeout(5000)
+        log('✅ 待機完了')
+
+        log('⏳ 最終確認ボタンをクリック...')
+        // disabled 属性を削除してからクリック
+        await page.$eval('button[formaction="/xapanel/xvps/server/freevps/extend/do"]', btn => {
+            btn.removeAttribute('disabled')
+            btn.click()
+        })
+        log('✅ 最終確認ボタンクリック完了')
+
+        // ボタンクリック直後に少し待機
+        await setTimeout(3000)
+
+        // 認証失敗メッセージを確認
+        log('🔍 認証結果を確認中...')
+        const errorMessageExists = await page.$eval('body', body => {
+            const text = body.innerText
+            return text.includes('認証に失敗しました')
+        }).catch(() => false)
+
+        if (errorMessageExists) {
+            log(`⚠️ 認証に失敗しました（試行 ${retryCount}/${maxRetries}）`)
+            if (retryCount < maxRetries) {
+                log('🔄 ページをリロードして再試行します...')
+                await page.reload({ waitUntil: 'networkidle2', timeout: 60000 })
+                log('✅ ページリロード完了')
             }
+        } else {
+            log('✅ 認証に成功しました！')
+            captchaSucceeded = true
         }
+    }
+
+    if (!captchaSucceeded) {
+        throw new Error(`${maxRetries}回の試行後も認証に失敗しました`)
     }
 
     log('⏳ 最終的なページ遷移を待機中...')
@@ -198,7 +154,7 @@ try {
         return true
     })
     
-    log('📸 [スクリーンショット4] 最終確認ページを撮影中...')
+    log('📸 最終確認ページを撮影中...')
     await page.screenshot({ path: 'screenshots/07_final_page.png' })
     log('✅ screenshots/07_final_page.png に保存完了')
 
@@ -231,22 +187,11 @@ try {
         
         if (hasError) {
             log('')
-            log('⚠️ エラーが発生しましたが、以下のファイルで詳細を確認できます:')
-            log('   📸 screenshots/04_after_button_click.png ← ボタン後の画面')
-            log('   📋 screenshots/06_buttons_found.json ← ボタン一覧')
-            log('   📄 screenshots/05_page_html.txt ← ページのHTML')
-            log('')
+            log('⚠️ エラーが発生しました')
             log(`   エラーメッセージ: ${errorMessage}`)
             log('')
         } else {
-            log('✅ 処理成功！以下のファイルが生成されました:')
-            log('   01_captcha_display.png')
-            log('   02_captcha_image_extracted.png')
-            log('   03_before_final_button.png')
-            log('   04_after_button_click.png')
-            log('   05_page_html.txt')
-            log('   06_buttons_found.json')
-            log('   07_final_page.png')
+            log('✅ 処理成功！')
         }
         
     } catch (finallyError) {
