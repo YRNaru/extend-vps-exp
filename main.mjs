@@ -26,7 +26,67 @@ mkdirSync('screenshots', { recursive: true })
 
 let hasError = false
 let errorMessage = ''
-let vpsDetailUrl = '' // VPS詳細ページのURLを保存
+let vpsDetailUrl = ''
+
+// Cloudflare Turnstileウィジェットをクリックする関数
+async function clickCloudflareTurnstile() {
+    // Turnstileの読み込みを待つ
+    await setTimeout(3000)
+
+    const frames = page.frames()
+    log(`🔍 フレーム数: ${frames.length}`)
+
+    for (const frame of frames) {
+        const frameUrl = frame.url()
+        if (frameUrl.includes('challenges.cloudflare.com')) {
+            log(`🔍 Cloudflareフレーム発見: ${frameUrl.substring(0, 80)}...`)
+
+            // ── 方法1: frameElement() でDOM要素を取得し座標クリック ──
+            try {
+                const frameElement = await frame.frameElement()
+                if (frameElement) {
+                    const box = await frameElement.boundingBox()
+                    if (box) {
+                        log(`📍 iframe座標: x=${box.x.toFixed(0)}, y=${box.y.toFixed(0)}, w=${box.width.toFixed(0)}, h=${box.height.toFixed(0)}`)
+                        // チェックボックスはウィジェット左端にある（左から25px、縦中央）
+                        await page.mouse.click(box.x + 25, box.y + box.height / 2)
+                        log('✅ Cloudflare Turnstile: 座標クリック成功')
+                        return true
+                    }
+                }
+            } catch (e) {
+                log(`⚠️ 座標クリック失敗: ${e.message}`)
+            }
+
+            // ── 方法2: フレーム内セレクタを順番に試す ──
+            const selectors = [
+                'div[role="checkbox"]',
+                'label',
+                '.ctp-checkbox',
+                '.cb-lb',
+                'input',
+                'span',
+                'body',
+            ]
+            for (const sel of selectors) {
+                try {
+                    await frame.waitForSelector(sel, { timeout: 2000 })
+                    await frame.click(sel)
+                    log(`✅ Cloudflare Turnstile: セレクタ "${sel}" でクリック成功`)
+                    return true
+                } catch {
+                    // 次のセレクタを試す
+                }
+            }
+
+            log('⚠️ フレーム内のどのセレクタもクリックできませんでした')
+            return false
+        }
+    }
+
+    log('⚠️ Cloudflareフレームが見つかりませんでした')
+    return false
+}
 
 try {
     log('✅ ブラウザ起動完了')
@@ -59,10 +119,9 @@ try {
     log('⏳ VPS詳細ページへ移動中...')
     await page.locator('a[href^="/xapanel/xvps/server/detail?id="]').setTimeout(60000).click()
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 })
-    vpsDetailUrl = page.url()  // VPS詳細ページのURLを保存
+    vpsDetailUrl = page.url()
     log(`✅ VPS詳細ページ読込完了: ${vpsDetailUrl}`)
 
-    // リトライループ
     let retryCount = 0
     const maxRetries = 3
     let captchaSucceeded = false
@@ -89,7 +148,6 @@ try {
 
         log('⏳ キャプチャ画像を抽出中...')
         const body = await page.$eval('img[src^="data:"]', img => img.src)
-        
         const base64Data = body.replace(/^data:image\/[^;]+;base64,/, '')
         const captchaImageBuffer = Buffer.from(base64Data, 'base64')
         writeFileSync(`screenshots/02_captcha_image_retry${retryCount}.png`, captchaImageBuffer)
@@ -106,64 +164,19 @@ try {
         await page.locator('[placeholder="上の画像の数字を入力"]').setTimeout(60000).fill(code)
         log(`✅ コード「${code}」を入力完了`)
 
-        // ====== ここが修正箇所 ======
-        // Cloudflare iframeのチェックボックスをクリック
-        log('⏳ Cloudflareチェックボックスを探しています...')
-        let cfClicked = false
-        try {
-            // iframeが読み込まれるまで少し待つ
-            await setTimeout(2000)
-
-            // iframe要素を取得
-            const iframeHandle = await page.waitForSelector(
-                'iframe[src*="cloudflare"], iframe[src*="challenges"]',
-                { timeout: 15000 }
-            )
-
-            if (iframeHandle) {
-                const cfFrame = await iframeHandle.contentFrame()
-                if (cfFrame) {
-                    await cfFrame.waitForSelector('input[type="checkbox"]', { timeout: 10000 })
-                    await cfFrame.click('input[type="checkbox"]')
-                    log('✅ Cloudflareチェックボックスをクリックしました')
-                    cfClicked = true
-                }
-            }
-        } catch (cfErr) {
-            log(`⚠️ iframeセレクタでの取得に失敗。フレーム一覧から探します: ${cfErr.message}`)
+        // Cloudflare Turnstile をクリック
+        log('⏳ Cloudflare Turnstileをクリック中...')
+        const clicked = await clickCloudflareTurnstile()
+        if (clicked) {
+            log('✅ Cloudflare Turnstileクリック完了 - 認証完了を待機中...')
+        } else {
+            log('⚠️ Cloudflare Turnstileクリック未完了 - このまま待機します...')
         }
-
-        // iframeセレクタで失敗した場合、page.frames()から探す
-        if (!cfClicked) {
-            try {
-                const frames = page.frames()
-                log(`🔍 フレーム数: ${frames.length}`)
-                for (const frame of frames) {
-                    const url = frame.url()
-                    log(`   フレームURL: ${url}`)
-                    if (url.includes('cloudflare') || url.includes('challenges')) {
-                        await frame.waitForSelector('input[type="checkbox"]', { timeout: 5000 })
-                        await frame.click('input[type="checkbox"]')
-                        log('✅ Cloudflareチェックボックスをクリックしました（フレーム一覧から）')
-                        cfClicked = true
-                        break
-                    }
-                }
-            } catch (cfErr2) {
-                log(`⚠️ Cloudflareチェックボックスのクリックに失敗しました: ${cfErr2.message}`)
-            }
-        }
-
-        if (!cfClicked) {
-            log('⚠️ Cloudflareチェックボックスが見つかりませんでした。このまま続行します...')
-        }
-        // ====== 修正箇所ここまで ======
 
         log('⏳ Cloudflare認証の完了を待機中...')
-        await setTimeout(60000)  // 60秒待機
+        await setTimeout(60000)
         log('✅ 待機完了')
 
-        // 60秒後のCloudflare検証完了状態をスクリーンショット
         log('📸 Cloudflare検証完了後の画面をスクリーンショット中...')
         await page.screenshot({ path: `screenshots/03_after_cloudflare_wait_retry${retryCount}.png` })
         log(`✅ screenshots/03_after_cloudflare_wait_retry${retryCount}.png に保存完了`)
@@ -179,8 +192,7 @@ try {
 
         log('🔍 認証結果を確認中...')
         const errorMessageExists = await page.$eval('body', body => {
-            const text = body.innerText
-            return text.includes('認証に失敗しました')
+            return body.innerText.includes('認証に失敗しました')
         }).catch(() => false)
 
         if (errorMessageExists) {
@@ -201,14 +213,14 @@ try {
     }
 
     log('⏳ 最終的なページ遷移を待機中...')
-    await page.waitForNavigation({ 
+    await page.waitForNavigation({
         waitUntil: 'networkidle0',
-        timeout: 60000 
+        timeout: 60000
     }).catch(() => {
         log('⚠️ ナビゲーション失敗（ページ遷移なし）- 続行します')
         return true
     })
-    
+
     log('📸 最終確認ページを撮影中...')
     await page.screenshot({ path: 'screenshots/07_final_page.png' })
     log('✅ screenshots/07_final_page.png に保存完了')
@@ -221,7 +233,7 @@ try {
     console.error('❌ エラーが発生しました:')
     console.error(e.message)
     console.error(e.stack)
-    
+
     try {
         log('📸 エラー発生時の画面を撮影中...')
         await page.screenshot({ path: 'screenshots/ERROR_page.png' })
@@ -237,7 +249,7 @@ try {
         await browser.close()
         log('🛑 ブラウザを終了しました')
         log('📁 スクリーンショットとデバッグ情報は screenshots/ ディレクトリに保存されました')
-        
+
         if (hasError) {
             log('')
             log('⚠️ エラーが発生しました')
@@ -249,7 +261,7 @@ try {
     } catch (finallyError) {
         console.error('⚠️ finally ブロック内でエラー:', finallyError)
     }
-    
+
     globalThis.setTimeout(() => {
         process.exit(hasError ? 1 : 0)
     }, 1000)
