@@ -107,8 +107,13 @@ try {
         log(`✅ コード「${code}」を入力完了`)
 
         log('⏳ Cloudflare認証の完了を待機中...')
-        await setTimeout(60000)  // 5秒 → 60秒に延長
+        await setTimeout(60000)  // 60秒待機
         log('✅ 待機完了')
+
+        // 60秒後のCloudflare検証完了状態をスクリーンショット
+        log('📸 Cloudflare検証完了後の画面をスクリーンショット中...')
+        await page.screenshot({ path: `screenshots/03_after_cloudflare_wait_retry${retryCount}.png` })
+        log(`✅ screenshots/03_after_cloudflare_wait_retry${retryCount}.png に保存完了`)
 
         log('⏳ 最終確認ボタンをクリック...')
         await page.$eval('button[formaction="/xapanel/xvps/server/freevps/extend/do"]', btn => {
