@@ -107,7 +107,7 @@ try {
         log(`✅ コード「${code}」を入力完了`)
 
         log('⏳ Cloudflare認証の完了を待機中...')
-        await setTimeout(5000)
+        await setTimeout(60000)  // 5秒 → 60秒に延長
         log('✅ 待機完了')
 
         log('⏳ 最終確認ボタンをクリック...')
